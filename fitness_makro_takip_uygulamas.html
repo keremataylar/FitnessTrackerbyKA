@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kalori ve Makro Takip Asistanı</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function App() {
+      const [profile, setProfile] = useState(() => {
+        const saved = localStorage.getItem('user_profile');
+        return saved ? JSON.parse(saved) : { gender: 'male', age: 28, height: 178, weight: 80 };
+      });
+
+      const [logs, setLogs] = useState(() => {
+        const saved = localStorage.getItem('fitness_logs');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [formData, setFormData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        weight: '',
+        intake: '',
+        exercise: '',
+        protein: '',
+        fat: '',
+        carb: '',
+        water: 0,
+        neck: '',
+        waist: '',
+        hip: '',
+        notes: ''
+      });
+
+      const chartRef = useRef(null);
+      const chartInstance = useRef(null);
+
+      // BMR Hesaplama (Mifflin-St Jeor)
+      const calculateBMR = (w) => {
+        const weight = parseFloat(w) || profile.weight;
+        if (profile.gender === 'male') {
+          return Math.round(10 * weight + 6.25 * profile.height - 5 * profile.age + 5);
+        } else {
+          return Math.round(10 * weight + 6.25 * profile.height - 5 * profile.age - 161);
+        }
+      };
+
+      useEffect(() => {
+        localStorage.setItem('user_profile', JSON.stringify(profile));
+      }, [profile]);
+
+      useEffect(() => {
+        localStorage.setItem('fitness_logs', JSON.stringify(logs));
+        renderChart();
+      }, [logs]);
+
+      const handleAddLog = (e) => {
+        e.preventDefault();
+        const bmr = calculateBMR(formData.weight);
+        const newLog = { ...formData, bmr, id: Date.now() };
+        
+        const existingIndex = logs.findIndex(l => l.date === formData.date);
+        let updatedLogs;
+        if (existingIndex >= 0) {
+          updatedLogs = [...logs];
+          updatedLogs[existingIndex] = newLog;
+        } else {
+          updatedLogs = [...logs, newLog];
+        }
+        
+        updatedLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
+        setLogs(updatedLogs);
+        alert('Kayıt başarıyla eklendi!');
+      };
+
+      const handleClearAll = () => {
+        if (confirm('Tüm verileri silmek istediğinize emin misiniz?')) {
+          setLogs([]);
+          localStorage.removeItem('fitness_logs');
+        }
+      };
+
+      const renderChart = () => {
+        if (!chartRef.current) return;
+        if (chartInstance.current) chartInstance.current.destroy();
+
+        const ctx = chartRef.current.getContext('2d');
+        const labels = logs.map(l => l.date);
+        const weights = logs.map(l => parseFloat(l.weight) || null);
+        
+        // 7 Günlük Moving Average
+        const ma7 = weights.map((val, idx, arr) => {
+          const sub = arr.slice(Math.max(0, idx - 6), idx + 1).filter(v => v !== null);
+          return sub.length ? (sub.reduce((a, b) => a + b, 0) / sub.length).toFixed(1) : null;
+        });
+
+        chartInstance.current = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              { label: 'Günlük Kilo (kg)', data: weights, borderColor: '#3b82f6', tension: 0.2 },
+              { label: '7 Günlük Trend (MA)', data: ma7, borderColor: '#10b981', borderDash: [5, 5], tension: 0.4 }
+            ]
+          },
+          options: { responsive: true, plugins: { legend: { labels: { color: '#fff' } } } }
+        });
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto space-y-6">
+          <header className="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div>
+              <h1 className="text-2xl font-bold text-blue-400"><i className="fa-solid fa-heart-pulse mr-2"></i>Fitness & Makro Takip</h1>
+              <p className="text-xs text-slate-400">Dinamik BMR & Trend Analizli Gelişmiş Asistan</p>
+            </div>
+            <button onClick={handleClearAll} className="bg-red-600/30 hover:bg-red-600 text-red-200 px-3 py-1.5 rounded-lg text-sm transition">
+              <i className="fa-solid fa-trash mr-1"></i>Verileri Sıfırla
+            </button>
+          </header>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+              <h3 className="font-semibold mb-3 text-slate-300"><i className="fa-solid fa-user mr-2"></i>Fiziksel Profil</h3>
+              <div className="space-y-2 text-sm">
+                <div>Boy: <input type="number" value={profile.height} onChange={e=>setProfile({...profile, height: +e.target.value})} className="bg-slate-700 px-2 py-1 rounded w-20 text-right"/> cm</div>
+                <div>Yaş: <input type="number" value={profile.age} onChange={e=>setProfile({...profile, age: +e.target.value})} className="bg-slate-700 px-2 py-1 rounded w-20 text-right"/></div>
+                <div className="pt-2 text-blue-400 font-semibold">Hesaplanan BMR: {calculateBMR()} kcal</div>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddLog} className="md:col-span-2 bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+              <h3 className="font-semibold text-slate-300"><i className="fa-solid fa-pen-to-square mr-2"></i>Günlük Veri Girişi</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                <input type="date" value={formData.date} onChange={e=>setFormData({...formData, date: e.target.value})} className="bg-slate-700 p-2 rounded text-white" required/>
+                <input type="number" step="0.1" placeholder="Kilo (kg)" value={formData.weight} onChange={e=>setFormData({...formData, weight: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+                <input type="number" placeholder="Alınan Kalori" value={formData.intake} onChange={e=>setFormData({...formData, intake: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+                <input type="number" placeholder="Egzersiz (kcal)" value={formData.exercise} onChange={e=>setFormData({...formData, exercise: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+                <input type="number" placeholder="Protein (g)" value={formData.protein} onChange={e=>setFormData({...formData, protein: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+                <input type="number" placeholder="Yağ (g)" value={formData.fat} onChange={e=>setFormData({...formData, fat: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+                <input type="number" placeholder="Karb (g)" value={formData.carb} onChange={e=>setFormData({...formData, carb: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+                <input type="number" step="0.25" placeholder="Su (Litre)" value={formData.water} onChange={e=>setFormData({...formData, water: e.target.value})} className="bg-slate-700 p-2 rounded text-white"/>
+              </div>
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded font-semibold text-sm transition">Kaydet / Güncelle</button>
+            </form>
+          </div>
+
+          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <h3 className="font-semibold mb-2 text-slate-300"><i className="fa-solid fa-chart-line mr-2"></i>Kilo ve 7 Günlük Trend Grafiği</h3>
+            <canvas ref={chartRef}></canvas>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
