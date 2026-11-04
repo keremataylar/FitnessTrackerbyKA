@@ -1,48 +1,1339 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kalori ve Makro Takip Asistanı</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-4 font-sans">
-  <div class="max-w-4xl mx-auto space-y-6">
-    <header class="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
-      <div>
-        <h1 class="text-2xl font-bold text-blue-400"><i class="fa-solid fa-heart-pulse mr-2"></i>Kalori & Makro Takip</h1>
-        <p class="text-xs text-slate-400">Dinamik BMR, Su ve Trend Analiz Asistanı</p>
-      </div>
-      <button onclick="clearAllData()" class="bg-red-600/30 hover:bg-red-600 text-red-200 px-3 py-1.5 rounded-lg text-sm transition">
-        <i class="fa-solid fa-trash mr-1"></i>Sıfırla
-      </button>
-    </header>
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, ResponsiveContainer 
+} from 'recharts';
+import { 
+  Calendar, PlusCircle, TrendingUp, Activity, Flame, Dumbbell, 
+  FileText, Settings, Download, Upload, Trash2, Edit3, CheckCircle2,
+  BrainCircuit, Scale, Target, Sparkles, AlertTriangle, RefreshCw,
+  Droplets, User, Ruler, Award, Zap, HeartPulse
+} from 'lucide-react';
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- Profil & BMR -->
-      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
-        <h3 class="font-semibold text-slate-300"><i class="fa-solid fa-user mr-2"></i>Fiziksel Profil</h3>
-        <div class="space-y-2 text-sm">
-          <div>Cinsiyet: 
-            <select id="gender" onchange="updateProfile()" class="bg-slate-700 px-2 py-1 rounded w-full mt-1 text-white">
-              <option value="male">Erkek</option>
-              <option value="female">Kadın</option>
-            </select>
-          </div>
-          <div>Yaş: <input type="number" id="age" value="28" onchange="updateProfile()" class="bg-slate-700 px-2 py-1 rounded w-full mt-1 text-white"/></div>
-          <div>Boy (cm): <input type="number" id="height" value="178" onchange="updateProfile()" class="bg-slate-700 px-2 py-1 rounded w-full mt-1 text-white"/></div>
-          <div class="pt-2 text-blue-400 font-semibold text-base" id="bmrDisplay">Hesaplanan BMR: 1800 kcal</div>
+// Default User Profile Settings
+const DEFAULT_PROFILE = {
+  age: 28,
+  gender: 'male', // 'male' or 'female'
+  height: 178, // cm
+  activityLevel: 1.375, // Moderate light activity
+  goal: 'cut', // 'cut', 'maintain', 'bulk'
+  targetWater: 3000 // ml
+};
+
+// Default Initial Sample Data
+const INITIAL_DATA = [
+  { id: '1', date: '2026-10-25', bmr: 1850, exercise: 450, intake: 2100, protein: 165, fat: 65, carbs: 210, weight: 81.2, water: 3000, waist: 88, neck: 39, hip: 98, chest: 102, note: 'Bacak antrenmanı yapıldı. Su tüketimi tamam.' },
+  { id: '2', date: '2026-10-26', bmr: 1845, exercise: 300, intake: 1950, protein: 160, fat: 60, carbs: 190, weight: 81.0, water: 2500, waist: 87.5, neck: 39, hip: 98, chest: 102, note: 'Kardiyo günü. Temiz beslenme.' },
+  { id: '3', date: '2026-10-27', bmr: 1840, exercise: 500, intake: 1900, protein: 170, fat: 55, carbs: 180, weight: 80.7, water: 3250, waist: 87, neck: 38.5, hip: 97.5, chest: 101.5, note: 'Göğüs & Ön Kol. Yüksek protein.' },
+  { id: '4', date: '2026-10-28', bmr: 1838, exercise: 200, intake: 2200, protein: 150, fat: 70, carbs: 240, weight: 80.6, water: 2000, waist: 87, neck: 38.5, hip: 97.5, chest: 101.5, note: 'Off gün. Su az içildi.' },
+  { id: '5', date: '2026-10-29', bmr: 1835, exercise: 600, intake: 2050, protein: 175, fat: 60, carbs: 200, weight: 80.3, water: 3500, waist: 86.5, neck: 38.5, hip: 97, chest: 101, note: 'Sırt & HIIT kardiyo.' },
+  { id: '6', date: '2026-10-30', bmr: 1830, exercise: 350, intake: 1900, protein: 165, fat: 58, carbs: 185, weight: 80.1, water: 3000, waist: 86, neck: 38, hip: 96.5, chest: 101, note: 'Omuz & Karın.' },
+  { id: '7', date: '2026-10-31', bmr: 1828, exercise: 400, intake: 1950, protein: 168, fat: 55, carbs: 195, weight: 79.8, water: 3000, waist: 85.8, neck: 38, hip: 96.5, chest: 100.5, note: 'Form gayet iyi.' }
+];
+
+// Calculate Dynamic BMR using Mifflin-St Jeor
+const calculateBMR = (weight, height, age, gender) => {
+  if (!weight || !height || !age) return 1900;
+  let bmr = (10 * weight) + (6.25 * height) - (5 * age);
+  bmr += gender === 'male' ? 5 : -161;
+  return Math.round(bmr);
+};
+
+// Calculate Body Fat Percentage using US Navy Formula
+const calculateBodyFat = (gender, waist, neck, height, hip) => {
+  if (!waist || !neck || !height) return null;
+  try {
+    if (gender === 'male') {
+      if (waist <= neck) return null;
+      const bf = 495 / (1.0324 - 0.19077 * Math.log10(waist - neck) + 0.15456 * Math.log10(height)) - 450;
+      return Math.max(3, Math.min(50, parseFloat(bf.toFixed(1))));
+    } else {
+      if (!hip || (waist + hip) <= neck) return null;
+      const bf = 495 / (1.29579 - 0.35004 * Math.log10(waist + hip - neck) + 0.22100 * Math.log10(height)) - 450;
+      return Math.max(8, Math.min(55, parseFloat(bf.toFixed(1))));
+    }
+  } catch (e) {
+    return null;
+  }
+};
+
+export default function App() {
+  // Local storage profile state
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem('fit_app_profile');
+    return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+  });
+
+  // Local storage logs state
+  const [logs, setLogs] = useState(() => {
+    const saved = localStorage.getItem('fit_app_logs');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return INITIAL_DATA; }
+    }
+    return INITIAL_DATA;
+  });
+
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [editingId, setEditingId] = useState(null);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+  const [forecastDays, setForecastDays] = useState(14);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Form State
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    bmr: 1850,
+    exercise: 350,
+    intake: 2000,
+    protein: 160,
+    fat: 60,
+    carbs: 200,
+    weight: 79.5,
+    water: 2500,
+    waist: 85.5,
+    neck: 38,
+    hip: 96,
+    chest: 100,
+    note: ''
+  });
+
+  // Automatically update BMR in form whenever weight, age, height, or gender changes
+  useEffect(() => {
+    if (formData.weight) {
+      const computedBMR = calculateBMR(formData.weight, profile.height, profile.age, profile.gender);
+      setFormData(prev => ({ ...prev, bmr: computedBMR }));
+    }
+  }, [formData.weight, profile.height, profile.age, profile.gender]);
+
+  // Persist Profile
+  useEffect(() => {
+    localStorage.setItem('fit_app_profile', JSON.stringify(profile));
+  }, [profile]);
+
+  // Persist Logs
+  useEffect(() => {
+    localStorage.setItem('fit_app_logs', JSON.stringify(logs));
+  }, [logs]);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
+  // Sort logs by date ascending
+  const sortedLogs = useMemo(() => {
+    return [...logs].sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [logs]);
+
+  // Handle Form Inputs
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: name === 'date' || name === 'note' ? value : (value === '' ? '' : Number(value))
+    }));
+  };
+
+  // Date selection in form (Auto-fill if entry exists)
+  const handleDateChange = (e) => {
+    const selectedDate = e.target.value;
+    const existingLog = logs.find(l => l.date === selectedDate);
+    
+    if (existingLog) {
+      setFormData(existingLog);
+      setEditingId(existingLog.id);
+      showToast(`${selectedDate} tarihli kayıt bulundu ve yüklendi.`);
+    } else {
+      setEditingId(null);
+      const latestWeight = sortedLogs.length > 0 ? sortedLogs[sortedLogs.length - 1].weight : 80;
+      const computedBMR = calculateBMR(latestWeight, profile.height, profile.age, profile.gender);
+      setFormData(prev => ({
+        ...prev,
+        date: selectedDate,
+        bmr: computedBMR,
+        note: ''
+      }));
+    }
+  };
+
+  // Water Quick Add Helper
+  const addWater = (amount) => {
+    setFormData(prev => ({
+      ...prev,
+      water: Math.max(0, (prev.water || 0) + amount)
+    }));
+  };
+
+  // Submit Log Entry
+  const handleSubmitLog = (e) => {
+    e.preventDefault();
+    if (!formData.date) {
+      showToast('Lütfen bir tarih seçin.');
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      bmr: formData.bmr || calculateBMR(formData.weight, profile.height, profile.age, profile.gender)
+    };
+
+    if (editingId) {
+      setLogs(prev => prev.map(item => item.id === editingId ? { ...payload, id: editingId } : item));
+      showToast(`${payload.date} tarihli kayıt başarıyla güncellendi.`);
+      setEditingId(null);
+    } else {
+      const existsIndex = logs.findIndex(l => l.date === payload.date);
+      if (existsIndex > -1) {
+        const updated = [...logs];
+        updated[existsIndex] = { ...payload, id: logs[existsIndex].id };
+        setLogs(updated);
+        showToast(`${payload.date} tarihli kayıt güncellendi!`);
+      } else {
+        const newEntry = { ...payload, id: Date.now().toString() };
+        setLogs(prev => [...prev, newEntry].sort((a, b) => new Date(a.date) - new Date(b.date)));
+        showToast(`${payload.date} tarihi için yeni kayıt eklendi!`);
+      }
+    }
+
+    setActiveTab('dashboard');
+  };
+
+  // Edit action from list
+  const handleEdit = (entry) => {
+    setFormData(entry);
+    setEditingId(entry.id);
+    setActiveTab('entry');
+  };
+
+  // Delete single entry
+  const handleDelete = (id) => {
+    if (window.confirm('Bu kaydı silmek istediğinize emin misiniz?')) {
+      setLogs(prev => prev.filter(item => item.id !== id));
+      showToast('Kayıt silindi.');
+    }
+  };
+
+  // Clear all data
+  const handleClearAllData = () => {
+    setLogs([]);
+    localStorage.removeItem('fit_app_logs');
+    setShowClearConfirmModal(false);
+    showToast('Tüm veriler tamamen sıfırlandı.');
+  };
+
+  // Advanced Stats & 7-Day Moving Average Computations
+  const stats = useMemo(() => {
+    if (sortedLogs.length === 0) return null;
+
+    const processed = sortedLogs.map((log, index, arr) => {
+      const totalBurned = (log.bmr || 0) + (log.exercise || 0);
+      const deficit = (log.intake || 0) - totalBurned;
+
+      // Calculate 7-Day Moving Average for weight
+      const sliceStart = Math.max(0, index - 6);
+      const windowLogs = arr.slice(sliceStart, index + 1);
+      const avgWeight = windowLogs.reduce((acc, curr) => acc + curr.weight, 0) / windowLogs.length;
+
+      // Calculate US Navy Body Fat %
+      const bodyFat = calculateBodyFat(profile.gender, log.waist, log.neck, profile.height, log.hip);
+
+      return {
+        ...log,
+        totalBurned,
+        deficit,
+        movingAvgWeight: parseFloat(avgWeight.toFixed(2)),
+        bodyFat
+      };
+    });
+
+    const recentLogs = processed.slice(-forecastDays);
+    const avgDailyDeficit = recentLogs.reduce((acc, curr) => acc + curr.deficit, 0) / (recentLogs.length || 1);
+    const avgProtein = recentLogs.reduce((acc, curr) => acc + (curr.protein || 0), 0) / (recentLogs.length || 1);
+    const avgWater = recentLogs.reduce((acc, curr) => acc + (curr.water || 0), 0) / (recentLogs.length || 1);
+    
+    const latestLog = processed[processed.length - 1];
+    const initialLog = processed[0];
+
+    const totalWeightChange = (latestLog.weight - initialLog.weight).toFixed(1);
+    const proteinPerKg = (avgProtein / (latestLog.weight || 1)).toFixed(2);
+
+    // Calculate Streak (Consecutive days logged up to latest)
+    let streak = 0;
+    if (processed.length > 0) {
+      streak = 1;
+      for (let i = processed.length - 1; i > 0; i--) {
+        const currDate = new Date(processed[i].date);
+        const prevDate = new Date(processed[i-1].date);
+        const diffDays = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) {
+          streak++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    return {
+      processedLogs: processed,
+      avgDailyDeficit,
+      avgProtein,
+      avgWater,
+      latestLog,
+      initialLog,
+      totalWeightChange,
+      proteinPerKg,
+      streak
+    };
+  }, [sortedLogs, forecastDays, profile]);
+
+  // Future Projection Calculator
+  const forecast = useMemo(() => {
+    if (!stats || stats.processedLogs.length === 0) return [];
+
+    const { avgDailyDeficit, avgProtein, latestLog } = stats;
+    const latestWeight = latestLog.weight;
+    const proteinPerKg = avgProtein / latestWeight;
+    const fatLossRatio = proteinPerKg >= 1.8 ? 0.88 : 0.72;
+
+    const generateProjection = (days) => {
+      const totalDeficitKcal = avgDailyDeficit * days;
+      const totalWeightDiffKg = totalDeficitKcal / 7700;
+      
+      let fatLossKg = 0;
+      let muscleChangeKg = 0;
+
+      if (totalWeightDiffKg < 0) {
+        fatLossKg = Math.abs(totalWeightDiffKg) * fatLossRatio;
+        muscleChangeKg = -(Math.abs(totalWeightDiffKg) - fatLossKg);
+      } else {
+        fatLossKg = totalWeightDiffKg * 0.3;
+        muscleChangeKg = totalWeightDiffKg * 0.7;
+      }
+
+      const predictedWeight = Math.max(35, latestWeight + totalWeightDiffKg);
+      const lastDate = new Date(latestLog.date);
+      lastDate.setDate(lastDate.getDate() + days);
+
+      return {
+        days,
+        targetDateStr: lastDate.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }),
+        predictedWeight: predictedWeight.toFixed(2),
+        weightDiff: (totalWeightDiffKg >= 0 ? `+${totalWeightDiffKg.toFixed(2)}` : totalWeightDiffKg.toFixed(2)),
+        fatLoss: fatLossKg.toFixed(2),
+        muscleChange: (muscleChangeKg >= 0 ? `+${muscleChangeKg.toFixed(2)}` : muscleChangeKg.toFixed(2))
+      };
+    };
+
+    return [generateProjection(7), generateProjection(14), generateProjection(30)];
+  }, [stats]);
+
+  // Combined Chart Data (History + Future Forecast)
+  const chartData = useMemo(() => {
+    if (!stats) return [];
+
+    const historic = stats.processedLogs.map(item => ({
+      date: new Date(item.date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' }),
+      ApsisDate: item.date,
+      Kilo: item.weight,
+      HareketliOrt: item.movingAvgWeight,
+      TahminiKilo: null,
+      Alınan: item.intake,
+      Harcanan: item.totalBurned,
+      Deficit: item.deficit,
+      Protein: item.protein,
+      Yag: item.fat,
+      Karb: item.carbs,
+      BodyFat: item.bodyFat
+    }));
+
+    if (historic.length === 0) return [];
+
+    const lastEntry = historic[historic.length - 1];
+    const lastDate = new Date(lastEntry.ApsisDate);
+    const lastWeight = lastEntry.Kilo;
+    const avgDeficit = stats.avgDailyDeficit;
+    const dailyWeightChange = avgDeficit / 7700;
+
+    const projectedPoints = [1, 3, 7, 14, 21, 30].map(daysAhead => {
+      const d = new Date(lastDate);
+      d.setDate(d.getDate() + daysAhead);
+      const projWeight = (lastWeight + dailyWeightChange * daysAhead).toFixed(2);
+      return {
+        date: d.toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' }),
+        ApsisDate: d.toISOString().split('T')[0],
+        Kilo: null,
+        HareketliOrt: null,
+        TahminiKilo: parseFloat(projWeight),
+        Alınan: null,
+        Harcanan: null,
+        Deficit: Math.round(avgDeficit),
+        Protein: null,
+        Yag: null,
+        Karb: null,
+        BodyFat: null
+      };
+    });
+
+    const mergedLast = { ...lastEntry, TahminiKilo: lastEntry.Kilo };
+    return [...historic.slice(0, -1), mergedLast, ...projectedPoints];
+  }, [stats]);
+
+  // Export Data JSON
+  const handleExportData = () => {
+    const payload = { profile, logs };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `fit_track_backup_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    showToast('Tüm verileriniz JSON dosyası olarak indirildi.');
+  };
+
+  // Import Data JSON
+  const handleImportData = (e) => {
+    const fileReader = new FileReader();
+    if (e.target.files && e.target.files[0]) {
+      fileReader.readAsText(e.target.files[0], "UTF-8");
+      fileReader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          if (parsed.logs && Array.isArray(parsed.logs)) {
+            setLogs(parsed.logs);
+            if (parsed.profile) setProfile(parsed.profile);
+            showToast('Veriler başarıyla yükledi!');
+          } else if (Array.isArray(parsed)) {
+            setLogs(parsed);
+            showToast('Kayıtlar başarıyla yüklendi!');
+          } else {
+            showToast('Geçersiz yedek dosyası.');
+          }
+        } catch (error) {
+          showToast('Dosya okunurken bir hata oluştu.');
+        }
+      };
+    }
+  };
+
+  const filteredLogs = useMemo(() => {
+    return sortedLogs.filter(l => 
+      l.date.includes(searchTerm) || 
+      (l.note && l.note.toLowerCase().includes(searchTerm.toLowerCase()))
+    ).reverse();
+  }, [sortedLogs, searchTerm]);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
+      
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-5 right-5 z-50 bg-emerald-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce border border-emerald-400">
+          <CheckCircle2 className="w-5 h-5" />
+          <span>{toastMessage}</span>
         </div>
-      </div>
+      )}
 
-      <!-- Veri Girişi Formu -->
-      <form onsubmit="saveLog(event)" class="md:col-span-2 bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
-        <h3 class="font-semibold text-slate-300"><i class="fa-solid fa-pen-to-square mr-2"></i>Günlük Veri Girişi</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-          <div><label class="text-xs text-slate-400">Tarih</label><input type="date" id="logDate" class="bg-slate-700 p-2 rounded w-full text-white" required></div>
-          <div><label class="text-xs text-slate-400">Kilo (kg)</label><input type="number" step="0.1" id="logWeight" placeholder="80" class="bg-slate-700 p-2 rounded w-full text-white"></div>
-          <div><label class="text-xs text-slate-400">Alınan Kalori</label><input type="number" id="logIntake" placeholder="2200" class="bg-slate-700 p-2 rounded w-full text-white"></div>
-          <div><label class="text-xs text-slate-400">Egzersiz (kcal)</label><input type="number" id="logExercise" placeholder="500" class="bg-slate-700 p-2 rounded w-full text-white"></div>
-          <div><label class="text-xs text-slate-400">Protein (g)</label><input
+      {/* CLEAR CONFIRMATION MODAL */}
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2 bg-rose-500/10 rounded-xl">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Tüm Verileri Sıfırla?</h3>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Bu işlem tüm kalori, kilo, vücut ölçüsü, su ve not kayıtlarınızı siler. Sıfırdan temiz bir sayfa açılacaktır.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowClearConfirmModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleClearAllData}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 text-white hover:bg-rose-500 shadow-lg shadow-rose-600/30"
+              >
+                Evet, Hepsini Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header Bar */}
+      <header className="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-40 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-500 rounded-xl text-slate-950 font-bold shadow-lg shadow-emerald-500/20">
+              <Activity className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-emerald-400 bg-clip-text text-transparent">
+                FitTrack Pro & Analytics
+              </h1>
+              <p className="text-[11px] text-slate-400 hidden sm:block">Dinamik BMR • Su & Ölçü Takibi • AI Gelecek Öngörüsü</p>
+            </div>
+          </div>
+
+          {/* Navigation Bar */}
+          <nav className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                activeTab === 'dashboard' 
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span className="hidden md:inline">Dashboard & Öngörü</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('entry')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                activeTab === 'entry' 
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span className="hidden md:inline">Günlük Giriş</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                activeTab === 'history' 
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span className="hidden md:inline">Geçmiş Kayıtlar</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                activeTab === 'profile' 
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              <span className="hidden md:inline">Profil & Ayarlar</span>
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        {/* DASHBOARD & FORECAST TAB */}
+        {activeTab === 'dashboard' && (
+          stats ? (
+            <div className="space-y-6">
+              
+              {/* DISCIPLINE STREAK & TOP BANNER */}
+              <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 border border-emerald-500/30 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 flex items-center justify-center">
+                    <Zap className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Disiplin Serisi</span>
+                      <span className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                        {stats.streak} GÜN KESİNTİSİZ
+                      </span>
+                    </div>
+                    <h2 className="text-base font-bold text-white mt-0.5">
+                      {stats.streak >= 7 ? 'Harika bir serin var! İstikrar sonuç getirir.' : 'Düzenli veri girişi yaparak trendini netleştir.'}
+                    </h2>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 text-xs bg-slate-950/80 px-4 py-2 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-slate-400 block">Dinamik BMR (Mifflin)</span>
+                    <span className="font-bold text-emerald-400">{stats.latestLog.bmr} kcal/gün</span>
+                  </div>
+                  <div className="h-6 w-px bg-slate-800" />
+                  <div>
+                    <span className="text-slate-400 block">Kilo Başı Protein</span>
+                    <span className="font-bold text-teal-300">{stats.proteinPerKg} g/kg</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI CARDS GRID */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                {/* Weight Card */}
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">Güncel Kilo / 7G Ort.</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <h3 className="text-2xl font-extrabold text-white">{stats.latestLog.weight}</h3>
+                      <span className="text-xs font-semibold text-emerald-400">({stats.latestLog.movingAvgWeight} avg)</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                      <Scale className="w-3 h-3 text-emerald-400" /> Değişim: {stats.totalWeightChange} kg
+                    </p>
+                  </div>
+                  <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                    <Scale className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Calorie Deficit Card */}
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">Ort. Günlük Kalori Dengesi</p>
+                    <h3 className={`text-2xl font-extrabold mt-1 ${stats.avgDailyDeficit <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {Math.round(stats.avgDailyDeficit)} <span className="text-sm font-normal text-slate-400">kcal</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {stats.avgDailyDeficit <= 0 ? 'Net Açık (Yağ Yakımı)' : 'Net Kalori Fazlası'}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+                    <Flame className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Body Fat % US Navy Card */}
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">Yağ Oranı (US Navy)</p>
+                    <h3 className="text-2xl font-extrabold text-cyan-300 mt-1">
+                      {stats.latestLog.bodyFat ? `%${stats.latestLog.bodyFat}` : 'Ölçü Girilmedi'}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                      <Ruler className="w-3 h-3 text-cyan-400" /> Bel: {stats.latestLog.waist || '-'} cm
+                    </p>
+                  </div>
+                  <div className="p-3 bg-cyan-500/10 text-cyan-400 rounded-xl border border-cyan-500/20">
+                    <Ruler className="w-6 h-6" />
+                  </div>
+                </div>
+
+                {/* Water & Hydration Warning Card */}
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">Ort. Su Tüketimi</p>
+                    <h3 className="text-2xl font-extrabold text-blue-400 mt-1">
+                      {(stats.avgWater / 1000).toFixed(1)} <span className="text-sm font-normal text-slate-400">L/gün</span>
+                    </h3>
+                    <p className="text-xs mt-1 font-medium flex items-center gap-1">
+                      {stats.avgWater < 2500 ? (
+                        <span className="text-amber-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Su Az (Ödem Riski)</span>
+                      ) : (
+                        <span className="text-blue-400 flex items-center gap-1"><Droplets className="w-3 h-3" /> Yeterli Hidrasyon</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+                    <Droplets className="w-6 h-6" />
+                  </div>
+                </div>
+
+              </div>
+
+              {/* FORECASTING & AI ENGINE */}
+              <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950 border border-indigo-500/30 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+                  <BrainCircuit className="w-48 h-48 text-indigo-400" />
+                </div>
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 relative z-10">
+                  <div>
+                    <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
+                      <Sparkles className="w-4 h-4 animate-pulse" />
+                      <span>Gelecek Simülasyon Motoru</span>
+                    </div>
+                    <h2 className="text-xl font-bold text-white mt-1">
+                      Mevcut Trendinize Göre Gelecek Tahmini
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      1 kg Yağ Dokusu ≈ 7700 kcal energy dengesi & {stats.proteinPerKg}g/kg protein oranına göre hesaplanmaktadır.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 text-xs">
+                    <span className="text-slate-400 px-2 font-medium">Trend Bazı:</span>
+                    {[7, 14, 30].map((days) => (
+                      <button
+                        key={days}
+                        onClick={() => setForecastDays(days)}
+                        className={`px-3 py-1 rounded-lg transition-all font-medium ${
+                          forecastDays === days 
+                            ? 'bg-indigo-600 text-white shadow font-bold' 
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Son {days} Gün
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
+                  {forecast.map((fc) => (
+                    <div 
+                      key={fc.days} 
+                      className="bg-slate-900/80 backdrop-blur border border-slate-800 p-5 rounded-2xl hover:border-indigo-500/50 transition-all group"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 text-xs font-semibold rounded-lg border border-indigo-500/30">
+                          {fc.days} Gün Sonra ({fc.targetDateStr})
+                        </span>
+                        <Target className="w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-colors" />
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs text-slate-400">Tahmini Kilo</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-black text-white">{fc.predictedWeight}</span>
+                            <span className="text-sm font-semibold text-slate-400">kg</span>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              parseFloat(fc.weightDiff) <= 0 
+                                ? 'bg-emerald-500/20 text-emerald-400' 
+                                : 'bg-amber-500/20 text-amber-400'
+                            }`}>
+                              {fc.weightDiff} kg
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800 text-xs">
+                          <div className="bg-slate-950 p-2 rounded-xl">
+                            <span className="text-slate-400 block text-[10px]">Tahmini Yağ Kaybı</span>
+                            <span className="font-bold text-emerald-400">-{fc.fatLoss} kg</span>
+                          </div>
+                          <div className="bg-slate-950 p-2 rounded-xl">
+                            <span className="text-slate-400 block text-[10px]">Kas Kütlesi Değişimi</span>
+                            <span className="font-bold text-teal-300">{fc.muscleChange} kg</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* CHARTS ROW 1: WEIGHT vs 7-DAY MOVING AVERAGE & FUTURE PROJECTION */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+                    <div>
+                      <h3 className="font-bold text-white text-base">Tartı Kilosu vs 7 Günlük Hareketli Ortalama</h3>
+                      <p className="text-xs text-slate-400">Su dalgalanmalarını süzmek için yeşil yumuşatılmış trend çizgisini takip edin</p>
+                    </div>
+                  </div>
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="date" stroke="#64748b" fontSize={11} />
+                        <YAxis domain={['auto', 'auto']} stroke="#64748b" fontSize={11} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }}
+                          itemStyle={{ color: '#e2e8f0', fontSize: '12px' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                        <Line 
+                          type="monotone" 
+                          dataKey="Kilo" 
+                          name="Günlük Tartı Kilosu (kg)" 
+                          stroke="#94a3b8" 
+                          strokeWidth={1.5} 
+                          dot={{ r: 3, fill: '#94a3b8' }} 
+                          connectNulls
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="HareketliOrt" 
+                          name="7-Günlük Smooth Trend (kg)" 
+                          stroke="#10b981" 
+                          strokeWidth={3} 
+                          dot={false}
+                          connectNulls
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="TahminiKilo" 
+                          name="Gelecek Tahmini (kg)" 
+                          stroke="#6366f1" 
+                          strokeWidth={2} 
+                          strokeDasharray="5 5" 
+                          dot={{ r: 3, fill: '#6366f1' }} 
+                          connectNulls
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* MACRO BREAKDOWN PIE CHART */}
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-bold text-white text-base mb-1">Ortalama Makro Dağılımı</h3>
+                    <p className="text-xs text-slate-400">Kalorisel oranlar (Protein: 4kcal, Yağ: 9kcal, Karb: 4kcal)</p>
+                  </div>
+                  <div className="h-56 w-full my-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Protein', value: Math.round(stats.avgProtein * 4), color: '#14b8a6' },
+                            { name: 'Yağ', value: Math.round((stats.processedLogs.reduce((acc, c) => acc + (c.fat || 0), 0) / stats.processedLogs.length) * 9), color: '#f59e0b' },
+                            { name: 'Karbonhidrat', value: Math.round((stats.processedLogs.reduce((acc, c) => acc + (c.carbs || 0), 0) / stats.processedLogs.length) * 4), color: '#6366f1' }
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={75}
+                          paddingAngle={4}
+                          dataKey="value"
+                        >
+                          <Cell fill="#14b8a6" />
+                          <Cell fill="#f59e0b" />
+                          <Cell fill="#6366f1" />
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }}
+                          formatter={(val) => [`${val} kcal`, 'Enerji']}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="bg-slate-950 p-2 rounded-xl border border-teal-500/30">
+                      <span className="block text-teal-400 font-semibold">Protein</span>
+                      <span className="font-bold text-slate-200">{Math.round(stats.avgProtein)}g</span>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded-xl border border-amber-500/30">
+                      <span className="block text-amber-400 font-semibold">Yağ</span>
+                      <span className="font-bold text-slate-200">
+                        {Math.round(stats.processedLogs.reduce((acc, c) => acc + (c.fat || 0), 0) / stats.processedLogs.length)}g
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded-xl border border-indigo-500/30">
+                      <span className="block text-indigo-400 font-semibold">Karb</span>
+                      <span className="font-bold text-slate-200">
+                        {Math.round(stats.processedLogs.reduce((acc, c) => acc + (c.carbs || 0), 0) / stats.processedLogs.length)}g
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* CHARTS ROW 2: CALORIES IN vs OUT */}
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-white text-base">Alınan vs Harcanan Kalori Dengesi</h3>
+                    <p className="text-xs text-slate-400">Harcanan = Dinamik BMR + Egzersiz ile yakılan kalori</p>
+                  </div>
+                </div>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData.filter(d => d.Alınan !== null)} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="date" stroke="#64748b" fontSize={11} />
+                      <YAxis stroke="#64748b" fontSize={11} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }} />
+                      <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                      <Bar dataKey="Alınan" name="Alınan Kalori" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Harcanan" name="Harcanan Kalori" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+            </div>
+          ) : (
+            <div className="bg-slate-900 border border-slate-800 p-12 rounded-3xl text-center space-y-4 max-w-lg mx-auto my-12">
+              <div className="p-4 bg-slate-800/60 rounded-full w-16 h-16 mx-auto flex items-center justify-center text-slate-400">
+                <Calendar className="w-8 h-8" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Henüz Kayıt Bulunmuyor</h3>
+              <p className="text-xs text-slate-400">
+                Analizleri ve gelecek tahminlerini görebilmek için günlük veri ekleyin.
+              </p>
+              <button
+                onClick={() => setActiveTab('entry')}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-6 py-2.5 rounded-xl text-xs transition inline-flex items-center gap-2"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>İlk Veriyi Ekle</span>
+              </button>
+            </div>
+          )
+        )}
+
+        {/* LOG ENTRY TAB */}
+        {activeTab === 'entry' && (
+          <div className="max-w-3xl mx-auto bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  {editingId ? 'Mevcut Tarihli Kaydı Düzenle' : 'Günlük Veri & Ölçü Girişi'}
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Seçtiğiniz tarihe ait beslenme, tartı, su tüketimi ve vücut ölçülerini kaydedin.
+                </p>
+              </div>
+              {editingId && (
+                <button 
+                  onClick={() => { 
+                    setEditingId(null); 
+                    setFormData({ 
+                      date: new Date().toISOString().split('T')[0], 
+                      bmr: calculateBMR(79.5, profile.height, profile.age, profile.gender), 
+                      exercise: 350, intake: 2000, protein: 160, fat: 60, carbs: 200, weight: 79.5, 
+                      water: 2500, waist: 85, neck: 38, hip: 96, chest: 100, note: '' 
+                    }); 
+                  }}
+                  className="text-xs bg-slate-800 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700"
+                >
+                  Yeni Kayıt Modu
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSubmitLog} className="space-y-6">
+              
+              {/* Date & Weight */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Tarih Seçimi</label>
+                  <input
+                    type="date"
+                    name="date"
+                    value={formData.date}
+                    onChange={handleDateChange}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Vücut Ağırlığı (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    name="weight"
+                    value={formData.weight}
+                    onChange={handleInputChange}
+                    placeholder="Örn: 80.5"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* WATER TRACKER SECTION */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
+                    <Droplets className="w-4 h-4" />
+                    <span>Su Tüketimi (Hydration Tracker)</span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-300">{formData.water || 0} ml / {profile.targetWater} ml</span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    className="bg-blue-500 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, ((formData.water || 0) / profile.targetWater) * 100)}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => addWater(250)}
+                    className="flex-1 bg-slate-900 hover:bg-blue-600/20 text-blue-300 border border-blue-500/30 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1"
+                  >
+                    +250 ml (Bardak)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addWater(500)}
+                    className="flex-1 bg-slate-900 hover:bg-blue-600/20 text-blue-300 border border-blue-500/30 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1"
+                  >
+                    +500 ml (Şişe)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, water: 0 }))}
+                    className="px-3 bg-slate-900 hover:bg-rose-500/20 text-rose-400 border border-slate-800 py-2 rounded-xl text-xs transition"
+                  >
+                    Sıfırla
+                  </button>
+                </div>
+              </div>
+
+              {/* Energy Balance */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Kalori & Enerji Dengesi</h3>
+                  <span className="text-[10px] text-slate-400">BMR Otomatik Hesaplandı</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Dinamik BMR (kcal)</label>
+                    <input
+                      type="number"
+                      name="bmr"
+                      value={formData.bmr}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-emerald-400 font-bold focus:outline-none"
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Egzersiz Yakılan (kcal)</label>
+                    <input
+                      type="number"
+                      name="exercise"
+                      value={formData.exercise}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Alınan Kalori (kcal)</label>
+                    <input
+                      type="number"
+                      name="intake"
+                      value={formData.intake}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Macros */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
+                <h3 className="text-xs font-bold text-teal-400 uppercase tracking-wider">Makro Besinler</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Protein (g)</label>
+                    <input
+                      type="number"
+                      name="protein"
+                      value={formData.protein}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Yağ (g)</label>
+                    <input
+                      type="number"
+                      name="fat"
+                      value={formData.fat}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Karb (g)</label>
+                    <input
+                      type="number"
+                      name="carbs"
+                      value={formData.carbs}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Body Measurements (cm) */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Vücut Ölçüleri (cm)</h3>
+                  <span className="text-[10px] text-slate-400">Yağ Oranı Hesabı İçin</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Bel (cm)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      name="waist"
+                      value={formData.waist}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Boyun (cm)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      name="neck"
+                      value={formData.neck}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Kalça (cm)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      name="hip"
+                      value={formData.hip}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Göğüs (cm)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      name="chest"
+                      value={formData.chest}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Note */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Günlük Not & Antrenman Detayları</label>
+                <textarea
+                  name="note"
+                  rows={3}
+                  value={formData.note}
+                  onChange={handleInputChange}
+                  placeholder="Bugün antrenman nasıl geçti? Enerjiniz, diyet uyumunuz..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-emerald-500/20 hover:brightness-110 transition flex items-center justify-center gap-2"
+              >
+                <PlusCircle className="w-5 h-5" />
+                <span>{editingId ? 'Değişiklikleri Kaydet' : 'Seçili Tarihe Veriyi Kaydet'}</span>
+              </button>
+
+            </form>
+          </div>
+        )}
+
+        {/* HISTORY TAB */}
+        {activeTab === 'history' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+              <div className="relative w-full sm:w-80">
+                <input
+                  type="text"
+                  placeholder="Tarih veya notlarda ara..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+                <FileText className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+              </div>
+              <div className="text-xs text-slate-400">
+                Toplam <span className="font-bold text-white">{filteredLogs.length}</span> adet kayıt gösteriliyor
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800 uppercase tracking-wider">
+                    <tr>
+                      <th className="p-4">Tarih</th>
+                      <th className="p-4">Kilo</th>
+                      <th className="p-4">Dinamik BMR</th>
+                      <th className="p-4">Alınan / Harcanan</th>
+                      <th className="p-4">Makrolar</th>
+                      <th className="p-4">Su (L)</th>
+                      <th className="p-4">Notlar</th>
+                      <th className="p-4 text-right">İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-slate-500">
+                          Kayıt bulunamadı.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLogs.map((log) => {
+                        const totalBurn = (log.bmr || 0) + (log.exercise || 0);
+                        return (
+                          <tr key={log.id} className="hover:bg-slate-800/40 transition">
+                            <td className="p-4 font-semibold text-white whitespace-nowrap">{log.date}</td>
+                            <td className="p-4 font-bold text-emerald-400 whitespace-nowrap">{log.weight} kg</td>
+                            <td className="p-4 text-slate-400 whitespace-nowrap">{log.bmr || '-'} kcal</td>
+                            <td className="p-4 whitespace-nowrap">
+                              <span className="text-rose-400 font-semibold">{log.intake}</span> / <span className="text-emerald-400 font-semibold">{totalBurn}</span>
+                            </td>
+                            <td className="p-4 whitespace-nowrap">
+                              <span className="text-teal-400">{log.protein}g</span> / <span className="text-amber-400">{log.fat}g</span> / <span className="text-indigo-400">{log.carbs}g</span>
+                            </td>
+                            <td className="p-4 text-blue-400 font-semibold whitespace-nowrap">
+                              {((log.water || 0) / 1000).toFixed(1)}L
+                            </td>
+                            <td className="p-4 max-w-xs truncate text-slate-400" title={log.note}>
+                              {log.note || '-'}
+                            </td>
+                            <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                              <button
+                                onClick={() => handleEdit(log)}
+                                className="p-1.5 hover:bg-slate-700 text-slate-300 rounded-lg transition"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(log.id)}
+                                className="p-1.5 hover:bg-rose-500/20 text-rose-400 rounded-lg transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PROFILE & SETTINGS TAB */}
+        {activeTab === 'profile' && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            
+            {/* User Profile Config */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-4">
+              <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Profil & Vücut Parametreleri</h2>
+                  <p className="text-xs text-slate-400">BMR ve Yağ oranı otomatik hesaplamaları için kullanır</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Yaş</label>
+                  <input
+                    type="number"
+                    value={profile.age}
+                    onChange={(e) => setProfile(p => ({ ...p, age: Number(e.target.value) }))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Cinsiyet</label>
+                  <select
+                    value={profile.gender}
+                    onChange={(e) => setProfile(p => ({ ...p, gender: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="male">Erkek</option>
+                    <option value="female">Kadın</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Boy (cm)</label>
+                  <input
+                    type="number"
+                    value={profile.height}
+                    onChange={(e) => setProfile(p => ({ ...p, height: Number(e.target.value) }))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Günlük Su Hedefi (ml)</label>
+                  <input
+                    type="number"
+                    step="250"
+                    value={profile.targetWater}
+                    onChange={(e) => setProfile(p => ({ ...p, targetWater: Number(e.target.value) }))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Backup & Data Import/Export */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-4">
+              <h2 className="text-lg font-bold text-white">Yedekleme & İçe/Dışa Aktarma</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  onClick={handleExportData}
+                  className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 rounded-xl border border-slate-700 transition text-xs"
+                >
+                  <Download className="w-4 h-4 text-emerald-400" />
+                  <span>Verileri İndir (JSON)</span>
+                </button>
+
+                <label className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 rounded-xl border border-slate-700 transition cursor-pointer text-xs">
+                  <Upload className="w-4 h-4 text-indigo-400" />
+                  <span>Yedek Yükle (JSON)</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportData}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Reset All Data */}
+            <div className="bg-slate-900 border border-rose-500/30 p-6 rounded-3xl shadow-xl space-y-3">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-rose-400" />
+                <span>Tüm Verileri Sıfırla</span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Uygulamadaki tüm geçmiş tartı, kalori, ölçü ve notlarınızı kalıcı olarak temizler.
+              </p>
+              <button
+                onClick={() => setShowClearConfirmModal(true)}
+                className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Tüm Verileri Sil & Sıfırla</span>
+              </button>
+            </div>
+
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
